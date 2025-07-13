@@ -1,0 +1,119 @@
+
+
+//    void DrawPath(MTL::RenderCommandEncoder *encoder, const Path &path,
+//                  Scalar depth, const Matrix &mvp, const Color &color);
+
+
+
+void Renderer::DrawPath(MTL::RenderCommandEncoder *encoder, const Path &path,
+                        Scalar depth, const Matrix &mvp, const Color &color) {
+    struct UniformData {
+        Matrix mvp;
+        float depth;
+    };
+
+    // Step 1: Generate triangles for exterior curves for loop blinn.
+    size_t edge_vertex_count = triangulator_->triangulateMesh(path);
+    BufferView edge_vertex_buffer = host_buffer_->getArenaOfSize(
+        edge_vertex_count * sizeof(CurveData), alignof(CurveData));
+    triangulator_->writeMesh(edge_vertex_buffer.contents());
+
+    // Step 2: Generate triangle mesh for interior shape for stenciling.
+    auto [vertex_count, index_count] =
+        triangulator_->triangulateMeshInterior(path);
+    BufferView inner_vertex_buffer = host_buffer_->getArenaOfSize(
+        vertex_count * sizeof(Point), alignof(Point));
+    BufferView inner_index_buffer = host_buffer_->getArenaOfSize(
+        index_count * sizeof(uint16_t), alignof(uint16_t));
+
+    triangulator_->writeMeshInterior(inner_vertex_buffer.contents(),
+                                     inner_index_buffer.contents());
+
+    // Step 3: Generate quad for cover stencil restore + fill.
+    BufferView cover_buffer =
+        host_buffer_->getArenaOfSize(12 * sizeof(float), alignof(simd::float2));
+    std::array<Scalar, 12> bounds = path.GetBounds().GetQuad();
+    ::memcpy(cover_buffer.contents(), bounds.data(), sizeof(Scalar) * 12);
+
+    // Step 4: Fill uniform buffer for color.
+    BufferView frag_uniform_buffer =
+        host_buffer_->getArenaOfSize(sizeof(Color), 256u);
+    ::memcpy(frag_uniform_buffer.contents(), &color, sizeof(Color));
+
+    // Step 5: Fill uniform buffer for transform.
+    BufferView vert_uniform_buffer =
+        host_buffer_->getArenaOfSize(sizeof(UniformData), 256u);
+    UniformData data;
+    data.mvp = mvp;
+    data.depth = depth;
+    ::memcpy(vert_uniform_buffer.contents(), &data, sizeof(UniformData));
+
+    // Step 6: Draw Interior. First by stenciling interior and then by restoring
+    // via cover draw.
+    encoder->setVertexBuffer(vert_uniform_buffer.buffer,
+                             vert_uniform_buffer.offset, 1);
+
+    //    {
+    //        encoder->setRenderPipelineState(pipelines_->GetStencil());
+    //        encoder->setVertexBuffer(inner_vertex_buffer.buffer,
+    //                                 inner_vertex_buffer.offset, 0);
+    //
+    //        encoder->setDepthStencilState(non_zero_stencil_);
+    //        encoder->setStencilReferenceValue(0);
+    //
+    //        encoder->drawIndexedPrimitives(
+    //            MTL::PrimitiveTypeTriangle, index_count, MTL::IndexTypeUInt16,
+    //            inner_index_buffer.buffer, inner_index_buffer.offset);
+    //    }
+    //
+    //    // Cover
+    //    {
+    //        encoder->setRenderPipelineState(
+    //            pipelines_->GetSolidColor(BlendMode::kSrcOver));
+    //        encoder->setVertexBuffer(cover_buffer.buffer, cover_buffer.offset,
+    //        0);
+    //
+    //        encoder->setFragmentBuffer(frag_uniform_buffer.buffer,
+    //                                   frag_uniform_buffer.offset, 0);
+    //        encoder->setStencilReferenceValue(0);
+    //        encoder->setDepthStencilState(cover_stencil_);
+    //
+    //        NS::UInteger start = 0;
+    //        NS::UInteger count = 6;
+    //        encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, start, count);
+    //    }
+
+    // Step 7: Draw exterior via loop blinn.
+    {
+        encoder->setRenderPipelineState(pipelines_->GetLoopBlinn());
+        encoder->setVertexBuffer(edge_vertex_buffer.buffer,
+                                 edge_vertex_buffer.offset, 0);
+        encoder->setFragmentBuffer(frag_uniform_buffer.buffer,
+                                   frag_uniform_buffer.offset, 0);
+        encoder->setDepthStencilState(noop_stencil_);
+
+        NS::UInteger start = 0;
+        NS::UInteger count = edge_vertex_count;
+        encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, start, count);
+    }
+    // Done!
+}
+
+
+            //                id<MTLDevice> mdevice = (__bridge
+            //                id<MTLDevice>)metal_device_; id<MTLCommandBuffer>
+            //                mcommand_buffer =
+            //                    (__bridge id<MTLCommandBuffer>)command_buffer;
+            //                id<MTLTexture> moffscreen =
+            //                    (__bridge id<MTLTexture>)offscreen.texture;
+            //                id<MTLTexture> mdest =
+            //                    (__bridge
+            //                    id<MTLTexture>)offscreen.filter_texture;
+            //                MPSImageGaussianBlur *blur =
+            //                [[MPSImageGaussianBlur alloc]
+            //                    initWithDevice:mdevice
+            //                             sigma:gaussian->sigma_x / 2];
+            //
+            //                [blur encodeToCommandBuffer:mcommand_buffer
+            //                              sourceTexture:moffscreen
+            //                         destinationTexture:mdest];
