@@ -117,17 +117,17 @@ void Canvas::DrawRect(const Rect &rect, Paint paint) {
 void Canvas::DrawPath(const Path &path, Paint paint) {
     size_t vertex_count = 0;
     size_t index_count = 0;
-   // if (path.IsConvex()) {
+   if (!paint.stroke) {
         auto [p_vertex_count, p_index_count] =
             triangulator_->triangulate(path, /*scale_factor=*/1);
         vertex_count = p_vertex_count;
         index_count = p_index_count;
-//    } else {
-//        auto [p_vertex_count, p_index_count] =
-//            triangulator_->expensiveTriangulate(path, /*scale_factor=*/1);
-//        vertex_count = p_vertex_count;
-//        index_count = p_index_count;
-//    }
+    } else {
+        auto [p_vertex_count, p_index_count] =
+            triangulator_->triangulateStroke(path, /*stroke_width=*/paint.stroke_width, /*scale_factor=*/1);
+        vertex_count = p_vertex_count;
+        index_count = p_index_count;
+    }
     if (vertex_count == 0 || index_count == 0) {
         return;
     }
@@ -148,7 +148,7 @@ void Canvas::DrawPath(const Path &path, Paint paint) {
         .vertex_buffer = result.position,
         .index_buffer = result.index,
         .bounds = path.GetBounds(),
-        .is_convex = path.IsConvex(),
+        .is_convex = path.IsConvex() || paint.stroke,
         .transform = clip_stack_.back().transform,
     });
     clip_stack_.back().draw_count++;

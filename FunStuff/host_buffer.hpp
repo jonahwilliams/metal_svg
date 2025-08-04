@@ -51,6 +51,8 @@ public:
     
     // Returns MSAA and DS.
     std::pair<MTL::Texture*, MTL::Texture*> CreateMSAATextures(uint32_t width, uint32_t height);
+    
+    MTL::Texture* CreateDepthStencil(uint32_t width, uint32_t height);
   
 private:
     // Persistent data.
@@ -77,6 +79,8 @@ private:
     
     // MSAA Stuff.
     std::unordered_map<uint64_t, std::pair<MTL::Texture*, MTL::Texture*>> cached_msaa_;
+    
+    std::unordered_map<uint64_t, MTL::Texture*> cached_depth_stencil_;
     
     void addNewBuffer(size_t required_bytes);
     

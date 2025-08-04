@@ -5,6 +5,29 @@
 
 namespace flatland {
 
+
+Point SolveQuad(Scalar t, const Point &p0, const Point &cp,
+                       const Point &p1) {
+    return p0 * std::pow(1 - t, 2) + //
+           cp * (2 * t) * (1 - t) +  //
+           p1 * std::pow(t, 2);
+}
+
+Quad LowerCubic(const Point &p1, const Point &cp1, const Point &cp2,
+                       const Point &p2) {
+    return Quad{3.0 * (cp1 - p1), 3.0 * (cp2 - cp1), 3.0 * (p2 - cp2)};
+}
+
+
+Point SolveCubic(Scalar t, const Point &p0, const Point &cp1,
+                        const Point &cp2, const Point &p1) {
+    return std::pow(1 - t, 3) * p0 +            //
+           cp1 * 3 * t * std::pow(1 - t, 2) +   //
+           cp2 * 3 * (1 - t) * std::pow(t, 2) + //
+           p1 * std::pow(t, 3);
+}
+
+
 /// Path Implementation.
 Path::Path(std::vector<Point> segments, Rect bounds)
     : segments_(std::move(segments)), bounds_(bounds) {}

@@ -101,6 +101,7 @@ BufferView HostBuffer::GetTransientArena(size_t required_bytes, size_t alignment
     if (current_offset_ + required_bytes + padding >
         transient_arena_[current_index_][current_buffer_]->length()) {
         addNewBuffer(required_bytes);
+        padding = AlignTo(current_offset_, alignment);
     }
     current_offset_ += padding;
     size_t offset = current_offset_;
@@ -143,6 +144,29 @@ std::pair<MTL::Texture*, size_t> HostBuffer::AllocateTexture(MTL::TextureDescrip
 
 MTL::Texture* HostBuffer::GetTexture(size_t id) {
     return textures_[id];
+}
+
+MTL::Texture* HostBuffer::CreateDepthStencil(uint32_t width, uint32_t height) {
+    uint64_t cache_key = static_cast<uint64_t>(width) << 32 | height;
+    
+    if (cached_depth_stencil_.count(cache_key)) {
+        return cached_depth_stencil_[cache_key];
+    }
+    
+    MTL::TextureDescriptor *ds_desc = MTL::TextureDescriptor::alloc()->init();
+    ds_desc->setPixelFormat(MTL::PixelFormatDepth32Float_Stencil8);
+    ds_desc->setUsage(MTL::TextureUsageRenderTarget);
+    ds_desc->setWidth(width);
+    ds_desc->setHeight(height);
+    ds_desc->setSampleCount(1);
+    ds_desc->setStorageMode(MTL::StorageModeMemoryless);
+    ds_desc->setTextureType(MTL::TextureType2D);
+    
+    MTL::Texture *ds_tex = metal_device_->newTexture(ds_desc);
+    
+    ds_desc->release();
+    
+    return cached_depth_stencil_[cache_key] = ds_tex;
 }
 
 std::pair<MTL::Texture*, MTL::Texture*> HostBuffer::CreateMSAATextures(uint32_t width, uint32_t height) {

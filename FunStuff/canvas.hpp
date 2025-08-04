@@ -20,6 +20,11 @@ enum class ClipStyle {
     kDifference
 };
 
+enum class FillRule {
+    kNonZero,
+    kEvenOdd,
+};
+
 enum class CommandType {
     kDraw,
     kTexture,
@@ -43,6 +48,9 @@ using Gradient = std::variant<std::monostate, LinearGradient, RadialGradient>;
 struct Paint {
     Color color;
     Gradient gradient = std::monostate();
+    bool stroke = false;
+    Scalar stroke_width = 1.0f;
+    FillRule fill_rule = FillRule::kNonZero;
 
     constexpr bool HasGradient() const {
         return !std::holds_alternative<std::monostate>(gradient);

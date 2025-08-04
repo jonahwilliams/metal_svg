@@ -30,7 +30,7 @@ void makeForBlendMode(BlendMode mode,
     }
 }
 
-MTL::RenderPipelineDescriptor *makeDefaultDescriptor() {
+MTL::RenderPipelineDescriptor *makeDefaultDescriptor(bool enable_msaa) {
     MTL::RenderPipelineDescriptor *desc =
         MTL::RenderPipelineDescriptor::alloc()->init();
     desc->colorAttachments()->object(0)->setPixelFormat(
@@ -38,13 +38,13 @@ MTL::RenderPipelineDescriptor *makeDefaultDescriptor() {
     desc->setDepthAttachmentPixelFormat(MTL::PixelFormatDepth32Float_Stencil8);
     desc->setStencilAttachmentPixelFormat(
         MTL::PixelFormatDepth32Float_Stencil8);
-    desc->setSampleCount(4);
+    desc->setSampleCount(enable_msaa ? 4 : 1);
     return desc;
 }
 
 } // namespace
 
-Pipelines::Pipelines(MTL::Device *metal_device) {
+Pipelines::Pipelines(MTL::Device *metal_device, bool enable_msaa) {
     MTL::Library *library = metal_device->newDefaultLibrary();
 
     // Downsample
@@ -94,7 +94,7 @@ Pipelines::Pipelines(MTL::Device *metal_device) {
     }
     // Solid Fill
     {
-        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor();
+        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor(enable_msaa);
         MTL::Function *vertexShader = library->newFunction(
             NS::String::string("vertexShader", NS::ASCIIStringEncoding));
         MTL::Function *fragmentShader = library->newFunction(
@@ -115,7 +115,7 @@ Pipelines::Pipelines(MTL::Device *metal_device) {
     }
     // Linear Gradient.
     {
-        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor();
+        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor(enable_msaa);
         MTL::Function *vertexShader = library->newFunction(NS::String::string(
             "gradientVertexShader", NS::ASCIIStringEncoding));
         MTL::Function *fragmentShader = library->newFunction(NS::String::string(
@@ -136,7 +136,7 @@ Pipelines::Pipelines(MTL::Device *metal_device) {
     }
     // Radial Gradient.
     {
-        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor();
+        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor(enable_msaa);
         MTL::Function *vertexShader = library->newFunction(NS::String::string(
             "gradientVertexShader", NS::ASCIIStringEncoding));
         MTL::Function *fragmentShader = library->newFunction(NS::String::string(
@@ -157,7 +157,7 @@ Pipelines::Pipelines(MTL::Device *metal_device) {
     }
     // Texture Fill.
     {
-        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor();
+        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor(enable_msaa);
         MTL::Function *vertexShader = library->newFunction(
             NS::String::string("textureVertexShader", NS::ASCIIStringEncoding));
         MTL::Function *fragmentShader = library->newFunction(NS::String::string(
@@ -179,7 +179,7 @@ Pipelines::Pipelines(MTL::Device *metal_device) {
 
     // Stencil pipeline
     {
-        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor();
+        MTL::RenderPipelineDescriptor *desc = makeDefaultDescriptor(enable_msaa);
         MTL::Function *vertexShader = library->newFunction(
             NS::String::string("stencilVertexShader", NS::ASCIIStringEncoding));
         MTL::Function *fragmentShader = library->newFunction(NS::String::string(

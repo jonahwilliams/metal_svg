@@ -17,7 +17,7 @@ enum class BlendMode {
 /// All pipelines and variants are created on construction.
 class Pipelines {
   public:
-    explicit Pipelines(MTL::Device *metal_device);
+    explicit Pipelines(MTL::Device *metal_device, bool enable_msaa);
 
     ~Pipelines();
 

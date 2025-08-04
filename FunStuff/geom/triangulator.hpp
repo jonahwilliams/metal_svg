@@ -28,18 +28,23 @@ class Triangulator {
     using TriangulatorCallback = std::function<void()>;
 
     /// @brief Triangulate [path] with the given scale factor, returning the
-    /// number of vertices
-    ///        in the resulting mesh.
+    /// number of vertices  in the resulting mesh.
     ///
     /// @returns the number of Points in the mesh (not the number of floats) and
     /// the number of indices.
     std::pair<size_t, size_t> triangulate(const Path &path,
                                           Scalar scale_factor);
-    
-    
+
+    /// @brief Triangulate [path] into a stroked path with [stroke_width].
+    ///
+    /// @returns the number of Points in the mesh (not the number of floats) and
+    /// the number of indices.
+    std::pair<size_t, size_t> triangulateStroke(const Path &path,
+                                                Scalar stroke_width,
+                                                Scalar scale_factor);
+
     std::pair<size_t, size_t> expensiveTriangulate(const Path &path,
                                                    Scalar scale_factor);
- 
 
     /// @brief Write out the triangulated mesh into the provided [out] buffer
     /// with a limit of [size].
@@ -55,9 +60,9 @@ class Triangulator {
     std::vector<uint16_t> indices_;
     size_t vertex_size_ = 0;
     size_t index_size_ = 0;
-    
+
     void EnsurePointStorage(size_t n);
-    
+
     void EnsureIndexStorage(size_t n);
 
     Triangulator(const Triangulator &) = delete;

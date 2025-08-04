@@ -45,8 +45,7 @@ void BufferBindingCache::BindFragment(MTL::Buffer *buffer, size_t offset,
     encoder_->setFragmentBuffer(buffer, offset, index);
 }
 
-
-void BufferBindingCache::BindPipeline(MTL::RenderPipelineState* state) {
+void BufferBindingCache::BindPipeline(MTL::RenderPipelineState *state) {
     if (state == last_state_) {
         return;
     }
@@ -54,7 +53,7 @@ void BufferBindingCache::BindPipeline(MTL::RenderPipelineState* state) {
     encoder_->setRenderPipelineState(state);
 }
 
-void BufferBindingCache::BindDepthStencil(MTL::DepthStencilState* state) {
+void BufferBindingCache::BindDepthStencil(MTL::DepthStencilState *state) {
     if (state == last_ds_state_) {
         return;
     }
@@ -62,14 +61,13 @@ void BufferBindingCache::BindDepthStencil(MTL::DepthStencilState* state) {
     encoder_->setDepthStencilState(state);
 }
 
-
 ///
 
 Renderer::Renderer(MTL::Device *metal_device)
     : metal_device_(metal_device),
       triangulator_(std::make_unique<Triangulator>()),
       host_buffer_(std::make_unique<HostBuffer>(metal_device)),
-      pipelines_(std::make_unique<Pipelines>(metal_device)) {
+      pipelines_(std::make_unique<Pipelines>(metal_device, kEnableMSAA)) {
     command_queue_ = metal_device->newCommandQueue();
 
     convex_label_ = NS::String::string("Convex Draw", NS::ASCIIStringEncoding);
@@ -163,6 +161,36 @@ Renderer::Renderer(MTL::Device *metal_device)
         back_desc->release();
         desc->release();
     }
+    // Even Odd Stencil.
+    {
+        auto desc = MTL::DepthStencilDescriptor::alloc()->init();
+
+        MTL::StencilDescriptor *front_desc =
+            MTL::StencilDescriptor::alloc()->init();
+        front_desc->setStencilCompareFunction(MTL::CompareFunctionEqual);
+        front_desc->setDepthStencilPassOperation(
+            MTL::StencilOperationIncrementWrap);
+        front_desc->setDepthFailureOperation(
+            MTL::StencilOperationDecrementWrap);
+
+        MTL::StencilDescriptor *back_desc =
+            MTL::StencilDescriptor::alloc()->init();
+        back_desc->setStencilCompareFunction(MTL::CompareFunctionEqual);
+        back_desc->setDepthStencilPassOperation(
+            MTL::StencilOperationIncrementWrap);
+        back_desc->setDepthFailureOperation(MTL::StencilOperationDecrementWrap);
+
+        desc->setFrontFaceStencil(front_desc);
+        desc->setBackFaceStencil(back_desc);
+        desc->setDepthWriteEnabled(false);
+        desc->setDepthCompareFunction(MTL::CompareFunctionLessEqual);
+
+        even_odd_stencil_ = metal_device_->newDepthStencilState(desc);
+
+        front_desc->release();
+        back_desc->release();
+        desc->release();
+    }
 
     {
         auto desc = MTL::DepthStencilDescriptor::alloc()->init();
@@ -245,7 +273,9 @@ Renderer::Renderer(MTL::Device *metal_device)
         desc->release();
     }
 
-    image_ = ::nsvgParse(GetGhostscript().data(), "px", 96);
+//    image_ = ::nsvgParseFromFile(
+//        "/Users/jaydog/Downloads/inputs/svg/paris-30k.svg", "px", 96);
+   image_ = ::nsvgParse(GetGhostscript().data(), "px", 96);
     star_ = ::nsvgParse(GetStar().data(), "px", 96);
 
     InitPicture();
@@ -272,41 +302,60 @@ void Renderer::InitPicture() {
     //    canvas.DrawRect(Rect::MakeLTRB(0, 0, 2000, 2000),
     //                    {.color = kRed, .gradient = linear_gradient});
 
-    canvas.Save();
-    canvas.Translate(500, 500);
+        canvas.Save();
+        canvas.Translate(500, 500);
 
     //    canvas.SaveLayer(0.7, GaussianFilter{.sigma = 8});
 
     // Test Clip.
-    //    PathBuilder clip_rect;
-    //    clip_rect.AddRect(Rect::MakeLTRB(100, 100, 950, 950));
-    //    canvas.ClipPath(clip_rect.takePath(), ClipStyle::kIntersect);
+
+//    canvas.Save();
+//    PathBuilder clip_rect;
+//    clip_rect.AddRect(Rect::MakeLTRB(200, 200, 800, 800));
+//    canvas.ClipPath(clip_rect.takePath(), ClipStyle::kDifference);
+//    canvas.DrawRect(Rect::MakeLTRB(0, 0, 1000, 1000), {.color = kRed});
+//    canvas.Restore();
+
+    // canvas.DrawRect(Rect::MakeLTRB(0, 0, 100, 100), {.color = kBlue});
 
     //    canvas.Rotate(0.5);
-    Scalar index = 0.0f;
-    for (auto shape = image_->shapes; shape != NULL;
-         shape = shape->next, index++) {
-        PathBuilder builder;
-        for (auto path = shape->paths; path != NULL; path = path->next) {
-            Scalar scale = 4;
-            for (int i = 0; i < path->npts - 1; i += 3) {
-                float *p = &path->pts[i * 2];
-                if (i == 0) {
-                    builder.moveTo(p[0] * scale, p[1] * scale);
+        Scalar index = 0.0f;
+        for (auto shape = image_->shapes; shape != NULL;
+             shape = shape->next, index++) {
+            PathBuilder builder;
+            for (auto path = shape->paths; path != NULL; path = path->next) {
+                Scalar scale = 4;
+                for (int i = 0; i < path->npts - 1; i += 3) {
+                    float *p = &path->pts[i * 2];
+                    if (i == 0) {
+                        builder.moveTo(p[0] * scale, p[1] * scale);
+                    }
+                    builder.cubicTo(Point{p[2], p[3]} * scale,
+                                    Point{p[4], p[5]} * scale,
+                                    Point{p[6], p[7]} * scale);
                 }
-                builder.cubicTo(Point{p[2], p[3]} * scale,
-                                Point{p[4], p[5]} * scale,
-                                Point{p[6], p[7]} * scale);
+                builder.close();
             }
-            builder.close();
+    
+            auto path = builder.takePath();
+            if (shape->fill.type == NSVGpaintType::NSVG_PAINT_COLOR) {
+                canvas.DrawPath(
+                                path,
+                                {.color =
+                                    Color::FromRGB(shape->fill.color).WithAlpha(shape->opacity),
+                                .fill_rule = shape->fillRule ==
+                                NSVGfillRule::NSVG_FILLRULE_NONZERO ?
+                                FillRule::kNonZero : FillRule::kEvenOdd});
+            }
+            if (shape->stroke.type == NSVGpaintType::NSVG_PAINT_COLOR) {
+                canvas.DrawPath(path, {.color =
+                Color::FromRGB(shape->stroke.color)
+                                                    .WithAlpha(shape->opacity),
+                                       .stroke = true,
+                                       .stroke_width = shape->strokeWidth});
+            }
         }
-
-        canvas.DrawPath(
-            builder.takePath(),
-            {.color =
-                 Color::FromRGB(shape->fill.color).WithAlpha(shape->opacity)});
-    }
-    canvas.Restore();
+        canvas.Restore();
 
     RenderProgram program = canvas.Prepare();
     picture_ = std::move(program);
@@ -337,7 +386,12 @@ void Renderer::DrawPathTriangulated(MTL::RenderCommandEncoder *encoder,
 
     // If path is convex, stenciling can be skipped.
     if (command.is_convex) {
-        encoder->pushDebugGroup(convex_label_);
+        if (command.paint.stroke) {
+            encoder->pushDebugGroup(
+                NS::String::string("Stroke Draw", NS::ASCIIStringEncoding));
+        } else {
+            encoder->pushDebugGroup(convex_label_);
+        }
         PrepareColorSource(encoder, cache, command.paint);
         cache.Bind(vert_uniform_buffer.buffer, vert_uniform_buffer.offset, 1);
 
@@ -371,7 +425,11 @@ void Renderer::DrawPathTriangulated(MTL::RenderCommandEncoder *encoder,
         cache.BindPipeline(pipelines_->GetStencil());
         cache.Bind(command.vertex_buffer.buffer, command.vertex_buffer.offset,
                    0);
-        cache.BindDepthStencil(non_zero_stencil_);
+        if (command.paint.fill_rule == FillRule::kNonZero) {
+            cache.BindDepthStencil(non_zero_stencil_);
+        } else {
+            cache.BindDepthStencil(even_odd_stencil_);
+        }
 
         if (command.index_buffer) {
             encoder->drawIndexedPrimitives(
@@ -426,8 +484,7 @@ void Renderer::PrepareColorSource(MTL::RenderCommandEncoder *encoder,
                           gradient->end.y};
         ::memcpy(frag_uniform_buffer.contents(), &data, sizeof(simd::float4));
 
-        cache.BindPipeline(
-            pipelines_->GetLinearGradient(BlendMode::kSrcOver));
+        cache.BindPipeline(pipelines_->GetLinearGradient(BlendMode::kSrcOver));
         cache.BindFragment(frag_uniform_buffer.buffer,
                            frag_uniform_buffer.offset, 0);
 
@@ -448,8 +505,7 @@ void Renderer::PrepareColorSource(MTL::RenderCommandEncoder *encoder,
                           gradient->radius, 0};
         ::memcpy(frag_uniform_buffer.contents(), &data, sizeof(simd::float4));
 
-        cache.BindPipeline(
-            pipelines_->GetRadialGradient(BlendMode::kSrcOver));
+        cache.BindPipeline(pipelines_->GetRadialGradient(BlendMode::kSrcOver));
         cache.BindFragment(frag_uniform_buffer.buffer,
                            frag_uniform_buffer.offset, 0);
 
@@ -466,7 +522,7 @@ void Renderer::PrepareColorSource(MTL::RenderCommandEncoder *encoder,
         cache.BindPipeline(pipelines_->GetSolidColor(
             paint.color.is_opaque() ? BlendMode::kSrc : BlendMode::kSrcOver));
         cache.BindFragment(frag_uniform_buffer.buffer,
-                                   frag_uniform_buffer.offset, 0);
+                           frag_uniform_buffer.offset, 0);
     }
 }
 
@@ -516,8 +572,7 @@ void Renderer::DrawTexture(MTL::RenderCommandEncoder *encoder,
     std::memcpy(cover_buffer.contents(), bounds.data(), 6 * sizeof(Point));
 
     encoder->pushDebugGroup(save_label_);
-    cache.BindPipeline(
-        pipelines_->GetTextureFill(BlendMode::kSrcOver));
+    cache.BindPipeline(pipelines_->GetTextureFill(BlendMode::kSrcOver));
     cache.Bind(cover_buffer.buffer, cover_buffer.offset, 0);
     cache.Bind(vert_uniform_buffer.buffer, vert_uniform_buffer.offset, 1);
     cache.Bind(texture_vert_uniform_buffer.buffer,
@@ -862,43 +917,83 @@ MTL::RenderCommandEncoder *
 Renderer::SetUpRenderPass(MTL::Texture *onscreen,
                           MTL::CommandBuffer *command_buffer,
                           Color clear_color) {
-    auto [msaa_tex, ds_tex] = host_buffer_->CreateMSAATextures(
-        static_cast<uint32_t>(onscreen->width()),
-        static_cast<uint32_t>(onscreen->height()));
+    if (kEnableMSAA) {
+        auto [msaa_tex, ds_tex] = host_buffer_->CreateMSAATextures(
+            static_cast<uint32_t>(onscreen->width()),
+            static_cast<uint32_t>(onscreen->height()));
 
-    MTL::RenderPassDescriptor *desc =
-        MTL::RenderPassDescriptor::alloc()->init();
+        MTL::RenderPassDescriptor *desc =
+            MTL::RenderPassDescriptor::alloc()->init();
 
-    MTL::RenderPassDepthAttachmentDescriptor *depth0 = desc->depthAttachment();
-    depth0->setClearDepth(1.0);
-    depth0->setLoadAction(MTL::LoadActionClear);
-    depth0->setStoreAction(MTL::StoreActionDontCare);
-    depth0->setTexture(ds_tex);
+        MTL::RenderPassDepthAttachmentDescriptor *depth0 =
+            desc->depthAttachment();
+        depth0->setClearDepth(1.0);
+        depth0->setLoadAction(MTL::LoadActionClear);
+        depth0->setStoreAction(MTL::StoreActionDontCare);
+        depth0->setTexture(ds_tex);
 
-    MTL::RenderPassStencilAttachmentDescriptor *stencil0 =
-        desc->stencilAttachment();
-    stencil0->setClearStencil(0);
-    stencil0->setLoadAction(MTL::LoadActionClear);
-    stencil0->setStoreAction(MTL::StoreActionDontCare);
-    stencil0->setTexture(ds_tex);
+        MTL::RenderPassStencilAttachmentDescriptor *stencil0 =
+            desc->stencilAttachment();
+        stencil0->setClearStencil(0);
+        stencil0->setLoadAction(MTL::LoadActionClear);
+        stencil0->setStoreAction(MTL::StoreActionDontCare);
+        stencil0->setTexture(ds_tex);
 
-    MTL::RenderPassColorAttachmentDescriptor *color0 =
-        desc->colorAttachments()->object(0);
-    color0->setTexture(msaa_tex);
-    color0->setLoadAction(MTL::LoadAction::LoadActionClear);
-    color0->setStoreAction(MTL::StoreAction::StoreActionMultisampleResolve);
+        MTL::RenderPassColorAttachmentDescriptor *color0 =
+            desc->colorAttachments()->object(0);
+        color0->setTexture(msaa_tex);
+        color0->setLoadAction(MTL::LoadAction::LoadActionClear);
+        color0->setStoreAction(MTL::StoreAction::StoreActionMultisampleResolve);
 
-    Color cc_pre = clear_color.Premultiply();
-    color0->setClearColor(
-        MTL::ClearColor(cc_pre.r, cc_pre.g, cc_pre.b, cc_pre.a));
-    color0->setResolveTexture(onscreen);
+        Color cc_pre = clear_color.Premultiply();
+        color0->setClearColor(
+            MTL::ClearColor(cc_pre.r, cc_pre.g, cc_pre.b, cc_pre.a));
+        color0->setResolveTexture(onscreen);
 
-    MTL::RenderCommandEncoder *encoder =
-        command_buffer->renderCommandEncoder(desc);
-    encoder->setStencilReferenceValue(0);
+        MTL::RenderCommandEncoder *encoder =
+            command_buffer->renderCommandEncoder(desc);
+        encoder->setStencilReferenceValue(0);
 
-    desc->release();
-    return encoder;
+        desc->release();
+        return encoder;
+    } else {
+        auto ds_tex = host_buffer_->CreateDepthStencil(
+            static_cast<uint32_t>(onscreen->width()),
+            static_cast<uint32_t>(onscreen->height()));
+        MTL::RenderPassDescriptor *desc =
+            MTL::RenderPassDescriptor::alloc()->init();
+
+        MTL::RenderPassDepthAttachmentDescriptor *depth0 =
+            desc->depthAttachment();
+        depth0->setClearDepth(1.0);
+        depth0->setLoadAction(MTL::LoadActionClear);
+        depth0->setStoreAction(MTL::StoreActionDontCare);
+        depth0->setTexture(ds_tex);
+
+        MTL::RenderPassStencilAttachmentDescriptor *stencil0 =
+            desc->stencilAttachment();
+        stencil0->setClearStencil(0);
+        stencil0->setLoadAction(MTL::LoadActionClear);
+        stencil0->setStoreAction(MTL::StoreActionDontCare);
+        stencil0->setTexture(ds_tex);
+
+        MTL::RenderPassColorAttachmentDescriptor *color0 =
+            desc->colorAttachments()->object(0);
+        color0->setTexture(onscreen);
+        color0->setLoadAction(MTL::LoadAction::LoadActionClear);
+        color0->setStoreAction(MTL::StoreAction::StoreActionStore);
+
+        Color cc_pre = clear_color.Premultiply();
+        color0->setClearColor(
+            MTL::ClearColor(cc_pre.r, cc_pre.g, cc_pre.b, cc_pre.a));
+
+        MTL::RenderCommandEncoder *encoder =
+            command_buffer->renderCommandEncoder(desc);
+        encoder->setStencilReferenceValue(0);
+
+        desc->release();
+        return encoder;
+    }
 }
 
 MTL::CommandBuffer *Renderer::render(MTL::Texture *onscreen) {

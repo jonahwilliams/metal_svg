@@ -14,6 +14,8 @@
 
 struct NSVGimage;
 
+static constexpr bool kEnableMSAA = true;
+
 namespace flatland {
 
 class BufferBindingCache {
@@ -96,6 +98,7 @@ class Renderer {
     // Depth/Stencil State
     MTL::DepthStencilState *noop_stencil_;
     MTL::DepthStencilState *non_zero_stencil_;
+    MTL::DepthStencilState *even_odd_stencil_;
     MTL::DepthStencilState *convex_draw_;
     MTL::DepthStencilState *transparent_convex_draw_;
     MTL::DepthStencilState *cover_stencil_opaque_;
